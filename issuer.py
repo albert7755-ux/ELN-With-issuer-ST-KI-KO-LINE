@@ -3,51 +3,44 @@ import plotly.graph_objects as go
 import pandas as pd
 import yfinance as yf
 import numpy as np
+# 移除了 components 的 import，因為 TradingView 移除了
 from datetime import datetime, timedelta
 
 # --- 1. 基礎設定 ---
-st.set_page_config(page_title="結構型商品戰情室 (V10.3)", layout="wide")
+st.set_page_config(page_title="結構型商品戰情室 (V10.7 - No Profile)", layout="wide")
 
 # ==========================================
-# 🔐 密碼保護機制 (Password Protection)
+# 🔐 密碼保護機制
 # ==========================================
 def check_password():
     """Returns `True` if the user had the correct password."""
 
     def password_entered():
-        """Checks whether a password entered by the user is correct."""
         if st.session_state["password"] == "5428":
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input(
-            "請輸入系統密碼 (Access Code)", type="password", on_change=password_entered, key="password"
-        )
+        st.text_input("請輸入系統密碼 (Access Code)", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        # Password incorrect, show input + error.
-        st.text_input(
-            "請輸入系統密碼 (Access Code)", type="password", on_change=password_entered, key="password"
-        )
+        st.text_input("請輸入系統密碼 (Access Code)", type="password", on_change=password_entered, key="password")
         st.error("❌ 密碼錯誤 (Incorrect Password)")
         return False
     else:
-        # Password correct.
         return True
 
 if not check_password():
-    st.stop()  # 如果密碼沒過，程式停止執行，不顯示下方內容
+    st.stop()
 
 # ==========================================
-# 🔓 主程式開始 (Main App)
+# 🔓 主程式開始
 # ==========================================
 
-st.title("📊 結構型商品 - 關鍵點位與長週期風險回測")
-st.markdown("回測區間：**2009/01/01 至今**。**已登入授權模式**。")
+st.title("📊 FCN - 關鍵點位與長週期風險回測")
+st.markdown("回測區間：**2009/01/01 至今**。")
 st.divider()
 
 # --- 2. 側邊欄：參數設定 ---
@@ -75,6 +68,8 @@ period_months = st.sidebar.number_input("產品/觀察天期 (月)", min_value=1
 run_btn = st.sidebar.button("🚀 開始分析", type="primary")
 
 # --- 3. 核心函數 ---
+
+# (已移除 TradingView 函數)
 
 def get_stock_data_from_2009(ticker):
     try:
@@ -220,6 +215,8 @@ if run_btn:
     else:
         for ticker in ticker_list:
             st.markdown(f"### 📌 標的：{ticker}")
+
+            # (已移除 TradingView 區塊)
             
             with st.spinner(f"正在分析 {ticker} (2009-Now) ..."):
                 df, err = get_stock_data_from_2009(ticker)
@@ -244,7 +241,7 @@ if run_btn:
                 continue
 
             # ==========================================
-            # 1. 四大重點指標 (價位)
+            # B. 四大重點指標 (價位)
             # ==========================================
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("最新股價", f"{current_price:.2f}")
@@ -253,7 +250,7 @@ if run_btn:
             c4.metric(f"Strike ({strike_pct}%)", f"{p_st:.2f}", help="期初價格或接股成本")
 
             # ==========================================
-            # [功能] 💰 潛在配息試算 (精簡版)
+            # C. 💰 潛在配息試算
             # ==========================================
             monthly_income = principal * (coupon_pa / 100) / 12
             
@@ -264,13 +261,13 @@ if run_btn:
             st.divider()
 
             # ==========================================
-            # 2. 走勢及關鍵價位圖 (主圖)
+            # D. 走勢及關鍵價位圖 (主圖)
             # ==========================================
             fig_main = plot_integrated_chart(df, ticker, current_price, p_ko, p_ki, p_st)
             st.plotly_chart(fig_main, use_container_width=True)
 
             # ==========================================
-            # 3. 藍底解釋 (AI 解讀)
+            # E. 藍底解釋 (AI 解讀)
             # ==========================================
             loss_pct = 100 - stats['safety_prob']
             stuck_rate = 0
@@ -293,7 +290,7 @@ if run_btn:
             """)
 
             # ==========================================
-            # 4. 回測圖 (Bar Chart)
+            # F. 回測圖 (Bar Chart)
             # ==========================================
             st.subheader("📉 歷史滾動回測結果")
             st.caption("🟩 **綠色**：安全 (拿回本金) ｜ 🟥 **紅色**：接股票 (虧損幅度)")
@@ -306,7 +303,7 @@ else:
     st.info("👈 請在左側設定參數，按下「開始分析」。")
 
 # ==========================================
-# 5. 底部警語
+# 6. 底部警語
 # ==========================================
 st.markdown("""
 <style>
