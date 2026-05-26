@@ -3,11 +3,11 @@ import plotly.graph_objects as go
 import pandas as pd
 import yfinance as yf
 import numpy as np
-import streamlit.components.v1 as components  # 記得加回這個，才能顯示 TradingView
+# 移除了 components 的 import，因為 TradingView 移除了
 from datetime import datetime, timedelta
 
 # --- 1. 基礎設定 ---
-st.set_page_config(page_title="結構型商品戰情室 (V10.8 - With Profile)", layout="wide")
+st.set_page_config(page_title="結構型商品戰情室 (V10.7 - No Profile)", layout="wide")
 
 # ==========================================
 # 🔐 密碼保護機制
@@ -69,50 +69,37 @@ run_btn = st.sidebar.button("🚀 開始分析", type="primary")
 
 # --- 3. 核心函數 ---
 
-def show_tradingview_widget_zoomed(symbol):
-    """
-    顯示放大 1.2 倍的 TradingView 機構簡介
-    (V10.6 極致優化：將內部高度設為 300，外部容器設為 370，消除多餘空白)
-    """
-    html_code = f"""
-    <div style="transform: scale(1.2); transform-origin: top left; width: 83.3%;">
-        <div class="tradingview-widget-container">
-          <div class="tradingview-widget-container__widget"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-symbol-profile.js" async>
-          {{
-          "width": "100%",
-          "height": "300",
-          "colorTheme": "light",
-          "isTransparent": false,
-          "symbol": "{symbol}",
-          "locale": "zh_TW"
-          }}
-          </script>
-        </div>
-    </div>
-    """
-    # height=370 是關鍵：300 * 1.2 = 360，留 10px 緩衝，切掉所有下方空白
-    components.html(html_code, height=370)
-
 def get_stock_data_from_2009(ticker):
     try:
         start_date = "2009-01-01"
         df = yf.download(ticker, start=start_date, progress=False)
         
-        if df.empty: return None, f"找不到 {ticker} 或該期間無資料"
+        if df.empty: 
+            return None, f"找不到 {ticker} 或該期間無資料"
         
-        df = df.reset_index()
+        # 💡 安全修正 1：處理新版 yfinance 回傳的 MultiIndex 欄位結構（例如有 Ticker 層級）
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
+            
+        # 💡 安全修正 2：將日期索引重設為 DataFrame 欄位
+        df = df.reset_index()
+        
+        # 💡 安全修正 3：若新版 yfinance 將日期欄位命名為 'index' 或 'Datetime'，統一改回 'Date'
+        if 'Date' not in df.columns:
+            df = df.rename(columns={'index': 'Date', 'Datetime': 'Date'})
+            
+        # 💡 安全修正 4：移除可能重複的欄位名（確保後面操作不衝突）
         df = df.loc[:, ~df.columns.duplicated()]
         
-        if 'Close' not in df.columns: return None, "無收盤價資料"
+        if 'Close' not in df.columns: 
+            return None, "無收盤價資料"
 
+        # 確保資料格式轉換正確
         df['Date'] = pd.to_datetime(df['Date'])
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
         df = df.dropna(subset=['Close'])
 
-        # 均線
+        # 均線計算（原本邏輯不變）
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
         df['MA240'] = df['Close'].rolling(window=240).mean()
@@ -238,12 +225,6 @@ if run_btn:
     else:
         for ticker in ticker_list:
             st.markdown(f"### 📌 標的：{ticker}")
-
-            # ==========================================
-            # A. 顯示 TradingView 機構簡介 (緊湊版)
-            # ==========================================
-            st.subheader("🏢 發行機構簡介")
-            show_tradingview_widget_zoomed(ticker)
             
             with st.spinner(f"正在分析 {ticker} (2009-Now) ..."):
                 df, err = get_stock_data_from_2009(ticker)
