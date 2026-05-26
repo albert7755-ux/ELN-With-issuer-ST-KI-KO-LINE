@@ -3,10 +3,11 @@ import plotly.graph_objects as go
 import pandas as pd
 import yfinance as yf
 import numpy as np
+import streamlit.components.v1 as components  # 記得加回這個，才能顯示 TradingView
 from datetime import datetime, timedelta
 
 # --- 1. 基礎設定 ---
-st.set_page_config(page_title="結構型商品戰情室 (V10.7 - No Profile)", layout="wide")
+st.set_page_config(page_title="結構型商品戰情室 (V10.8 - With Profile)", layout="wide")
 
 # ==========================================
 # 🔐 密碼保護機制
@@ -43,13 +44,9 @@ st.markdown("回測區間：**2009/01/01 至今**。")
 st.divider()
 
 # --- 2. 側邊欄：參數設定 ---
-st.sidebar.header("1️⃣ 輸入標的與發行機構")
+st.sidebar.header("1️⃣ 輸入標的")
 default_tickers = "TSLA, NVDA, GOOG"
 tickers_input = st.sidebar.text_area("股票代碼 (逗號分隔)", value=default_tickers, height=80)
-
-# 保留 Issuer 機構選擇
-issuer_list = ["All", "Barclays", "Citi", "BNP", "SG", "UBS", "GS", "MS", "JPM", "BCS", "NOMURA"]
-issuer_input = st.sidebar.selectbox("選擇發行機構 (Issuer)", issuer_list, index=0)
 
 st.sidebar.divider()
 st.sidebar.header("2️⃣ 結構條件 (%)")
@@ -72,64 +69,55 @@ run_btn = st.sidebar.button("🚀 開始分析", type="primary")
 
 # --- 3. 核心函數 ---
 
+def show_tradingview_widget_zoomed(symbol):
+    """
+    顯示放大 1.2 倍的 TradingView 機構簡介
+    (V10.6 極致優化：將內部高度設為 300，外部容器設為 370，消除多餘空白)
+    """
+    html_code = f"""
+    <div style="transform: scale(1.2); transform-origin: top left; width: 83.3%;">
+        <div class="tradingview-widget-container">
+          <div class="tradingview-widget-container__widget"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-symbol-profile.js" async>
+          {{
+          "width": "100%",
+          "height": "300",
+          "colorTheme": "light",
+          "isTransparent": false,
+          "symbol": "{symbol}",
+          "locale": "zh_TW"
+          }}
+          </script>
+        </div>
+    </div>
+    """
+    # height=370 是關鍵：300 * 1.2 = 360，留 10px 緩衝，切掉所有下方空白
+    components.html(html_code, height=370)
+
 def get_stock_data_from_2009(ticker):
     try:
         start_date = "2009-01-01"
         df = yf.download(ticker, start=start_date, progress=False)
         
-        if df.empty: 
-            return None, f"找不到 {ticker} 或該期間無資料"
+        if df.empty: return None, f"找不到 {ticker} 或該期間無資料"
         
-        # 💡 核心修復：處理新版 yfinance 回傳的 MultiIndex 欄位結構
+        df = df.reset_index()
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-            
-        # 💡 核心修復：將日期索引重設為 DataFrame 欄位
-        df = df.reset_index()
-        
-        # 💡 核心修復：若新版 yfinance 將日期欄位命名為 'index' 或 'Datetime'，統一改回 'Date'
-        if 'Date' not in df.columns:
-            df = df.rename(columns={'index': 'Date', 'Datetime': 'Date'})
-            
-        # 💡 核心修復：移除可能重複的欄位名
         df = df.loc[:, ~df.columns.duplicated()]
         
-        if 'Close' not in df.columns: 
-            return None, "無收盤價資料"
+        if 'Close' not in df.columns: return None, "無收盤價資料"
 
         df['Date'] = pd.to_datetime(df['Date'])
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
         df = df.dropna(subset=['Close'])
 
-        # 均線計算
+        # 均線
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
         df['MA240'] = df['Close'].rolling(window=240).mean()
         
         return df, None
-    except Exception as e:
-        return None, str(e)
-
-# 💡 核心修復：新版 yfinance info 抓取防錯機制（確保右側簡介正常運作）
-def get_company_info(ticker):
-    try:
-        t = yf.Ticker(ticker)
-        info = t.info
-        
-        # 抓取安全欄位，避免 KeyError 導致整頁白畫面
-        comp_name = info.get('longName', ticker)
-        sector = info.get('sector', '未知行業')
-        industry = info.get('industry', '未知產業')
-        summary = info.get('longBusinessSummary', '暫無該公司之英文詳細簡介說明。')
-        market_cap = info.get('marketCap', 0)
-        
-        return {
-            'name': comp_name,
-            'sector': sector,
-            'industry': industry,
-            'summary': summary,
-            'market_cap': market_cap
-        }, None
     except Exception as e:
         return None, str(e)
 
@@ -248,103 +236,93 @@ if run_btn:
     if not ticker_list:
         st.warning("請輸入代碼")
     else:
-        st.write(f"🏢 **當前分析發行機構 (Issuer):** `{issuer_input}`")
-        
         for ticker in ticker_list:
-            st.markdown(f"## 📌 標的：{ticker}")
+            st.markdown(f"### 📌 標的：{ticker}")
+
+            # ==========================================
+            # A. 顯示 TradingView 機構簡介 (緊湊版)
+            # ==========================================
+            st.subheader("🏢 發行機構簡介")
+            show_tradingview_widget_zoomed(ticker)
             
-            # 使用左右分欄：左邊顯示回測數據與圖表，右邊顯示公司簡介與基本面
-            left_col, right_col = st.columns([2, 1])
+            with st.spinner(f"正在分析 {ticker} (2009-Now) ..."):
+                df, err = get_stock_data_from_2009(ticker)
             
-            with left_col:
-                with st.spinner(f"正在分析 {ticker} 數據 (2009-Now) ..."):
-                    df, err = get_stock_data_from_2009(ticker)
+            if err:
+                st.error(f"{ticker} 讀取失敗: {err}")
+                continue
                 
-                if err:
-                    st.error(f"{ticker} 讀取失敗: {err}")
-                    continue
-                    
-                try:
-                    current_price = float(df['Close'].iloc[-1])
-                    p_ko = current_price * (ko_pct / 100)
-                    p_st = current_price * (strike_pct / 100)
-                    p_ki = current_price * (ki_pct / 100)
-                except:
-                    st.error(f"{ticker} 價格計算錯誤")
-                    continue
+            try:
+                current_price = float(df['Close'].iloc[-1])
+                p_ko = current_price * (ko_pct / 100)
+                p_st = current_price * (strike_pct / 100)
+                p_ki = current_price * (ki_pct / 100)
+            except:
+                st.error(f"{ticker} 價格計算錯誤")
+                continue
 
-                bt_data, stats = run_comprehensive_backtest(df, ki_pct, strike_pct, period_months)
+            bt_data, stats = run_comprehensive_backtest(df, ki_pct, strike_pct, period_months)
+            
+            if bt_data is None:
+                st.warning("資料不足")
+                continue
+
+            # ==========================================
+            # B. 四大重點指標 (價位)
+            # ==========================================
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("最新股價", f"{current_price:.2f}")
+            c2.metric(f"KO ({ko_pct}%)", f"{p_ko:.2f}", help="若股價高於此，提前獲利出場")
+            c3.metric(f"KI ({ki_pct}%)", f"{p_ki:.2f}", help="若股價跌破此，保護消失", delta_color="inverse")
+            c4.metric(f"Strike ({strike_pct}%)", f"{p_st:.2f}", help="期初價格或接股成本")
+
+            # ==========================================
+            # C. 💰 潛在配息試算
+            # ==========================================
+            monthly_income = principal * (coupon_pa / 100) / 12
+            
+            st.markdown("#### 💰 潛在現金流試算 (Income Analysis)")
+            m1, m2 = st.columns(2)
+            m1.metric("投資本金", f"${principal:,.0f}")
+            m2.metric("預估每月配息", f"${monthly_income:,.0f}", help=f"計算公式: 本金 x {coupon_pa}% / 12")
+            st.divider()
+
+            # ==========================================
+            # D. 走勢及關鍵價位圖 (主圖)
+            # ==========================================
+            fig_main = plot_integrated_chart(df, ticker, current_price, p_ko, p_ki, p_st)
+            st.plotly_chart(fig_main, use_container_width=True)
+
+            # ==========================================
+            # E. 藍底解釋 (AI 解讀)
+            # ==========================================
+            loss_pct = 100 - stats['safety_prob']
+            stuck_rate = 0
+            if stats['loss_count'] > 0:
+                stuck_rate = (stats['stuck_count'] / stats['loss_count']) * 100
+            avg_days = stats['avg_recovery']
+
+            st.info(f"""
+            **📊 長週期回測報告 (2009/01/01 至今，每 {period_months} 個月一期)：**
+            
+            1.  **獲利潛力 (正報酬機率)**：
+                若不考慮配息，單純看股價，持有期滿後股價上漲的機率為 **{stats['positive_prob']:.1f}%**。
                 
-                if bt_data is None:
-                    st.warning("資料不足")
-                    continue
-
-                # ==========================================
-                # B. 四大重點指標 (價位)
-                # ==========================================
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("最新股價", f"{current_price:.2f}")
-                c2.metric(f"KO ({ko_pct}%)", f"{p_ko:.2f}")
-                c3.metric(f"KI ({ki_pct}%)", f"{p_ki:.2f}", delta_color="inverse")
-                c4.metric(f"Strike ({strike_pct}%)", f"{p_st:.2f}")
-
-                # ==========================================
-                # C. 💰 潛在配息試算
-                # ==========================================
-                monthly_income = principal * (coupon_pa / 100) / 12
-                st.markdown("#### 💰 潛在現金流試算 (Income Analysis)")
-                m1, m2 = st.columns(2)
-                m1.metric("投資本金", f"${principal:,.0f}")
-                m2.metric("預估每月配息", f"${monthly_income:,.0f}")
-                st.divider()
-
-                # ==========================================
-                # D. 走勢及關鍵價位圖 (主圖)
-                # ==========================================
-                fig_main = plot_integrated_chart(df, ticker, current_price, p_ko, p_ki, p_st)
-                st.plotly_chart(fig_main, use_container_width=True)
-
-                # ==========================================
-                # E. 藍底解釋 (AI 解讀)
-                # ==========================================
-                loss_pct = 100 - stats['safety_prob']
-                stuck_rate = 0
-                if stats['loss_count'] > 0:
-                    stuck_rate = (stats['stuck_count'] / stats['loss_count']) * 100
-                avg_days = stats['avg_recovery']
-
-                st.info(f"""
-                **📊 長週期回測報告：**
-                1. **獲利潛力**：持有期滿後股價上漲的機率為 **{stats['positive_prob']:.1f}%**。
-                2. **安全性分析**：有 **{stats['safety_prob']:.1f}%** 的機率可以安全拿回本金。
-                3. **恢復力分析**：若接股票 (機率約 {loss_pct:.1f}%)，**平均等待 {avg_days:.0f} 天** 股價會漲回 Strike 價格。
-                """)
-
-                # ==========================================
-                # F. 回測圖 (Bar Chart)
-                # ==========================================
-                st.subheader("📉 歷史滾動回測結果")
-                fig_bar = plot_rolling_bar_chart(bt_data, ticker)
-                st.plotly_chart(fig_bar, use_container_width=True)
-
-            # 💡 右側分欄：處理並渲染該公司的專屬中英文簡介與基本面
-            with right_col:
-                st.markdown("### 🏢 公司基本面與簡介")
-                with st.spinner(f"正在載入 {ticker} 公司簡介..."):
-                    info_data, info_err = get_company_info(ticker)
+            2.  **安全性分析 (不被換到股票的機率)**：
+                在過去 16 年任意時間點進場，有 **{stats['safety_prob']:.1f}%** 的機率可以安全拿回本金 (未跌破 KI 或 跌破後漲回)。
                 
-                if info_err or not info_data:
-                    st.caption("⚠️ 無法從 Yahoo Finance 獲取該公司詳細簡介欄位。")
-                else:
-                    st.markdown(f"**公司全稱:** {info_data['name']}")
-                    st.markdown(f"**所屬板塊 (Sector):** {info_data['sector']}")
-                    st.markdown(f"**細分產業 (Industry):** {info_data['industry']}")
-                    if info_data['market_cap'] > 0:
-                        st.markdown(f"**公司市值:** ${info_data['market_cap'] / 1e9:,.2f}B USD")
-                    
-                    st.divider()
-                    st.markdown("**📄 商業模式與簡介 (Business Summary):**")
-                    st.write(info_data['summary'])
+            3.  **恢復力分析 (回到 Strike 的時間)**：
+                若不幸發生接股票的情況 (機率約 {loss_pct:.1f}%)，根據歷史經驗，**平均等待 {avg_days:.0f} 天** 股價即會漲回 Strike 價格。
+                *(註：在所有接股票的案例中，約有 {stuck_rate:.1f}% 的情況截至目前尚未解套)*
+            """)
+
+            # ==========================================
+            # F. 回測圖 (Bar Chart)
+            # ==========================================
+            st.subheader("📉 歷史滾動回測結果")
+            st.caption("🟩 **綠色**：安全 (拿回本金) ｜ 🟥 **紅色**：接股票 (虧損幅度)")
+            fig_bar = plot_rolling_bar_chart(bt_data, ticker)
+            st.plotly_chart(fig_bar, use_container_width=True)
 
             st.markdown("---")
 
